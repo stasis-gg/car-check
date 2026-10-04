@@ -1,11 +1,18 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from app.config import settings
 
+def get_clean_webapp_url() -> str:
+    url = settings.WEBAPP_URL.strip() if settings.WEBAPP_URL else ""
+    if not url.startswith("https://"):
+        return "https://carcheck-kg.onrender.com"
+    return url.rstrip("/")
+
 def get_report_keyboard(query: str) -> InlineKeyboardMarkup:
     """
     Клавиатура под результатом проверки
     """
-    web_app_url = f"{settings.WEBAPP_URL}/report/{query}"
+    base_url = get_clean_webapp_url()
+    web_app_url = f"{base_url}/report/{query}"
     
     buttons = [
         [
@@ -24,7 +31,8 @@ def get_start_keyboard() -> InlineKeyboardMarkup:
     """
     Клавиатура в стартовом сообщении с готовыми примерами
     """
-    web_app_url = f"{settings.WEBAPP_URL}/"
+    base_url = get_clean_webapp_url()
+    web_app_url = f"{base_url}/"
     buttons = [
         [
             InlineKeyboardButton(
@@ -43,3 +51,4 @@ def get_start_keyboard() -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
