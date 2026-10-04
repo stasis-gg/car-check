@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ru" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>CarCheck KG — Автомобильный отчет</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    <!-- FontAwesome 6 Pro-style icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --bg-color: #f1f5f9;
+            --surface-color: #ffffff;
+            --border-color: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+        }
+        body {
+            background-color: var(--tg-theme-bg-color, var(--bg-color));
+            color: var(--tg-theme-text-color, var(--text-primary));
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            letter-spacing: -0.01em;
+        }
+        .tab-active {
+            color: #0284c7;
+            border-bottom: 2px solid #0284c7;
+            font-weight: 700;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .badge-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.15rem 0.55rem;
+            border-radius: 9999px;
+            font-size: 0.68rem;
+            font-weight: 600;
+            line-height: 1rem;
+        }
+    </style>
+</head>
+<body x-data="carApp()" x-init="initApp()" class="min-h-full pb-20 selection:bg-sky-500 selection:text-white">
+
+    <!-- Top Sticky Navigation & Search Header -->
+    <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90 px-4 py-3 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
+        <div class="max-w-2xl mx-auto">
+            
+            <!-- Top brand header -->
+            <div class="flex items-center justify-between mb-2.5">
+                <div class="flex items-center space-x-2">
+                    <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-slate-900 to-slate-700 flex items-center justify-center text-white text-sm shadow-sm font-black">
+                        CC
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-1.5">
+                            <h1 class="font-extrabold text-sm text-slate-900 leading-tight">CarCheck KG</h1>
+                            <span class="badge-pill bg-slate-100 text-slate-600 border border-slate-200 text-[9px] py-0 px-1.5">4 реестра</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 font-medium">Штрафы КР • Таможня • Южная Корея • Copart</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5">
+                    <button @click="copyFullReport()" x-show="data" class="text-xs bg-slate-50 hover:bg-slate-100 active:scale-95 text-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-200 font-medium flex items-center gap-1 transition">
+                        <i class="fa-regular fa-copy text-[11px]"></i>
+                        <span>Копия</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search Inputs Bar -->
+            <form @submit.prevent="performSearch()" class="space-y-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                    <!-- Plate Input -->
+                    <div class="relative">
+                        <div class="absolute left-2.5 top-2.5 flex items-center pointer-events-none">
+                            <span class="text-[10px] font-bold bg-red-600 text-white px-1 py-0.5 rounded leading-none">KG</span>
+                        </div>
+                        <input 
+                            type="text" 
+                            x-model="plateInput" 
+                            placeholder="Госномер (напр. 01KG555ADF)" 
+                            class="w-full bg-slate-100/90 border border-slate-200 focus:border-sky-500 rounded-xl pl-10 pr-3 py-2 text-xs font-bold focus:outline-none focus:bg-white uppercase font-mono tracking-wider transition text-slate-800 placeholder:text-slate-400 placeholder:font-normal placeholder:tracking-normal"
+                        />
+                    </div>
+
+                    <!-- VIN Input -->
+                    <div class="relative">
+                        <div class="absolute left-2.5 top-2.5 flex items-center pointer-events-none text-slate-400">
+                            <i class="fa-solid fa-barcode text-xs"></i>
+                        </div>
+                        <input 
+                            type="text" 
+                            x-model="vinInput" 
+                            placeholder="VIN номер (17 символов)" 
+                            maxlength="17"
+                            class="w-full bg-slate-100/90 border border-slate-200 focus:border-sky-500 rounded-xl pl-8 pr-3 py-2 text-xs font-bold focus:outline-none focus:bg-white uppercase font-mono tracking-wider transition text-slate-800 placeholder:text-slate-400 placeholder:font-normal placeholder:tracking-normal"
+                        />
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button 
+                    type="submit" 
+                    :disabled="loading || (!plateInput.trim() && !vinInput.trim())"
+                    class="w-full bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white text-xs font-semibold py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-40 cursor-pointer"
+                >
+                    <span x-show="!loading" class="flex items-center gap-1.5">
+                        <i class="fa-solid fa-magnifying-glass text-[11px]"></i>
+                        Проверить автомобиль
+                    </span>
+                    <span x-show="loading" class="flex items-center gap-2">
+                        <i class="fa-solid fa-circle-notch fa-spin text-xs"></i>
+                        Опрос государственных и аукционных реестров...
+                    </span>
+                </button>
+            </form>
+
+            <!-- Quick Preset Chips -->
+            <div class="flex items-center gap-1.5 mt-2 overflow-x-auto pb-0.5 no-scrollbar text-[11px]">
+                <span class="text-slate-400 shrink-0 text-[10px] uppercase font-semibold">Примеры:</span>
+                <button type="button" @click="fillExample('01KG555ADF', '1FTEW1E55KFB29513')" class="shrink-0 bg-sky-50 hover:bg-sky-100 text-sky-800 px-2 py-0.5 rounded-lg border border-sky-200/80 font-medium transition">
+                    ⚡ Номер + VIN (Все 4 базы)
+                </button>
+                <button type="button" @click="fillExample('01KG555ADF', '')" class="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 font-mono transition">
+                    🇰🇬 01KG555ADF
+                </button>
+                <button type="button" @click="fillExample('', 'KMHR281ABLU095874')" class="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-lg border border-slate-200 font-mono transition">
+                    🔑 VIN Palisade
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-2xl mx-auto px-4 mt-3">
+
+        <!-- Toast Feedback Notification -->
+        <div x-show="toastMessage" x-transition.opacity.duration.200ms class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900/95 backdrop-blur text-white text-xs font-medium px-4 py-2 rounded-full shadow-xl border border-slate-800 flex items-center gap-2" x-cloak>
+            <i class="fa-solid fa-check text-emerald-400 text-xs"></i>
+            <span x-text="toastMessage"></span>
+        </div>
+
+        <!-- Initial Placeholder State (Before Search) -->
+        <div x-show="!data && !loading && !errorMessage" class="py-12 text-center">
+            <div class="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-400 mx-auto mb-3 border border-slate-200/60">
+                <i class="fa-solid fa-car text-2xl text-slate-500"></i>
+            </div>
+            <h2 class="text-sm font-bold text-slate-800">Готов к проверке</h2>
+            <p class="text-xs text-slate-500 mt-1 max-w-sm mx-auto leading-relaxed">
+                Введите госномер Кыргызстана, 17-значный VIN код или оба номера сразу для комплексного анализа.
+            </p>
+        </div>
+
+        <!-- Loading State Spinner -->
+        <div x-show="loading" class="py-16 text-center" x-cloak>
+            <div class="inline-flex p-3.5 bg-slate-100 rounded-2xl text-slate-700 mb-3 animate-pulse border border-slate-200">
+                <i class="fa-solid fa-layer-group text-2xl"></i>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm">Сбор информации из 4 баз данных</h3>
+            <p class="text-xs text-slate-500 mt-1">Опрос Tolom.kg, Таможни КР, Korea-Cars и Copart...</p>
+        </div>
+
+        <!-- Error Alert -->
+        <div x-show="errorMessage && !loading" class="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl text-xs mb-3 flex items-start gap-2.5" x-cloak>
+            <i class="fa-solid fa-circle-exclamation text-rose-500 text-sm mt-0.5 shrink-0"></i>
+            <span x-text="errorMessage" class="font-medium leading-relaxed"></span>
+        </div>
+
+        <!-- Loaded Data Display Container -->
+        <div x-show="data && !loading" class="space-y-3" x-cloak>
+
+            <!-- 1. Executive Summary Vehicle Card -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                
+                <div class="flex items-start justify-between gap-2">
+                    <div>
+                        <h2 class="text-base sm:text-lg font-black text-slate-900 leading-snug tracking-tight" x-text="data?.summary?.car_name || 'Транспортное средство'"></h2>
+                        <div class="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
+                            <span x-show="data?.summary?.year" class="font-bold text-slate-800" x-text="data?.summary?.year + ' г.'"></span>
+                            <span x-show="data?.summary?.color" x-text="'• ' + data?.summary?.color"></span>
+                            <span x-show="data?.tolom?.car?.engine_volume" x-text="'• ' + data?.tolom?.car?.engine_volume + ' см³'"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Registration & VIN Badges (Tap to copy) -->
+                <div class="flex flex-wrap items-center gap-1.5 mt-3 pt-3 border-t border-slate-100">
+                    <template x-if="data?.plate">
+                        <button @click="copyText(data.plate, 'Госномер скопирован')" class="bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-200 transition">
+                            <span class="text-[9px] bg-red-600 text-white font-sans px-1 rounded">KG</span>
+                            <span x-text="data.plate"></span>
+                            <i class="fa-regular fa-copy text-[10px] text-slate-400"></i>
+                        </button>
+                    </template>
+                    <template x-if="!data?.plate">
+                        <span class="badge-pill bg-amber-50 text-amber-800 border border-amber-200/80">
+                            ⚠️ Госномер не указан
+                        </span>
+                    </template>
+
+                    <template x-if="data?.vin">
+                        <button @click="copyText(data.vin, 'VIN скопирован')" class="bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 px-2.5 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 border border-slate-200 transition">
+                            <i class="fa-solid fa-barcode text-slate-400 text-[10px]"></i>
+                            <span x-text="data.vin"></span>
+                            <i class="fa-regular fa-copy text-[10px] text-slate-400"></i>
+                        </button>
+                    </template>
+                    <template x-if="!data?.vin">
+                        <span class="badge-pill bg-amber-50 text-amber-800 border border-amber-200/80">
+                            ⚠️ VIN не указан
+                        </span>
+                    </template>
+                </div>
+
+                <!-- Contextual Hint Banner if either Plate or VIN is missing -->
+                <div x-show="!data?.plate || !data?.vin" class="mt-3 bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-start gap-2.5">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-600 text-sm mt-0.5 shrink-0"></i>
+                    <div class="space-y-0.5 flex-1">
+                        <div class="font-bold text-amber-900 text-xs">Проверены не все источники:</div>
+                        <div x-show="!data?.plate" class="text-[11px] text-amber-800 leading-tight">
+                            • Штрафы ГУОБДД (Tolom.kg) не проверены — укажите госномер.
+                        </div>
+                        <div x-show="!data?.vin" class="text-[11px] text-amber-800 leading-tight">
+                            • Таможня КР, Корея и Copart не проверены — укажите VIN.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Photos Carousel (Copart / AutoPartner / Korea) -->
+                <div x-show="data?.autopartner?.images?.length || data?.korea?.images?.length" class="mt-3.5 pt-3 border-t border-slate-100">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                            <i class="fa-solid fa-camera text-slate-500"></i> Фотографии автомобиля / лота
+                        </span>
+                        <span class="text-[10px] bg-slate-100 text-slate-600 font-semibold px-2 py-0.5 rounded-md" x-text="(data?.autopartner?.images?.length || data?.korea?.images?.length || 0) + ' фото'"></span>
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-1.5 no-scrollbar">
+                        <template x-for="(img, idx) in (data?.autopartner?.images || data?.korea?.images || [])" :key="idx">
+                            <img :src="img" @click="selectedImage = img" class="h-24 w-36 object-cover rounded-xl border border-slate-200 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition shadow-sm bg-slate-100" alt="Фото лота" loading="lazy" />
+                        </template>
+                    </div>
+                </div>
+
+                <!-- 4 Portals Status Matrix -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
+                    <!-- Fines Status -->
+                    <div class="p-2.5 rounded-xl border text-center transition"
+                         :class="data?.summary?.has_fines ? 'bg-red-50 border-red-200 text-red-800' : (data?.tolom ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800')">
+                        <div class="font-semibold text-[10px] uppercase opacity-75">Штрафы КР</div>
+                        <div class="font-bold mt-0.5 text-xs truncate" x-text="data?.summary?.has_fines ? data?.summary?.fines_count + ' шт. (' + data?.summary?.fines_sum + ' с)' : (data?.tolom ? 'Чисто (0 сом)' : 'Требуется номер')"></div>
+                    </div>
+
+                    <!-- Arrests Status -->
+                    <div class="p-2.5 rounded-xl border text-center transition"
+                         :class="data?.summary?.has_arrest ? 'bg-red-50 border-red-200 text-red-800' : (data?.tolom ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800')">
+                        <div class="font-semibold text-[10px] uppercase opacity-75">Аресты / Залог</div>
+                        <div class="font-bold mt-0.5 text-xs truncate" x-text="data?.summary?.has_arrest ? 'ЕСТЬ АРЕСТ' : (data?.tolom ? 'Ограничений нет' : 'Требуется номер')"></div>
+                    </div>
+
+                    <!-- Customs Status -->
+                    <div class="p-2.5 rounded-xl border text-center transition"
+                         :class="data?.customs?.found ? 'bg-sky-50 border-sky-200 text-sky-800' : (data?.customs ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-amber-50 border-amber-200 text-amber-800')">
+                        <div class="font-semibold text-[10px] uppercase opacity-75">Таможня КР</div>
+                        <div class="font-bold mt-0.5 text-xs truncate" x-text="data?.customs?.found ? 'Выпуск разрешен' : (data?.customs ? 'Не числится' : 'Требуется VIN')"></div>
+                    </div>
+
+                    <!-- Copart Auction Status -->
+                    <div class="p-2.5 rounded-xl border text-center transition"
+                         :class="data?.autopartner?.found ? 'bg-indigo-50 border-indigo-200 text-indigo-800' : (data?.autopartner ? 'bg-slate-50 border-slate-200 text-slate-600' : 'bg-amber-50 border-amber-200 text-amber-800')">
+                        <div class="font-semibold text-[10px] uppercase opacity-75">Copart / IAAI</div>
+                        <div class="font-bold mt-0.5 text-xs truncate" x-text="data?.autopartner?.found ? 'Лот (' + (data?.autopartner?.images?.length || 0) + ' фото)' : (data?.autopartner ? 'Не числится' : 'Требуется VIN')"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modern Segmented Tabs -->
+            <div class="flex border-b border-slate-200 bg-white rounded-t-2xl px-2 overflow-x-auto no-scrollbar text-xs font-semibold">
+                <button @click="switchTab('overview')" :class="{'tab-active': currentTab === 'overview'}" class="py-3 px-3 shrink-0 text-slate-500 transition">Сводка</button>
+                <button @click="switchTab('tolom')" :class="{'tab-active': currentTab === 'tolom'}" class="py-3 px-3 shrink-0 text-slate-500 flex items-center gap-1.5 transition">
+                    Штрафы КР (Tolom)
+                    <span x-show="data?.summary?.has_fines" class="badge-pill bg-rose-100 text-rose-700 font-bold" x-text="data?.summary?.fines_count"></span>
+                </button>
+                <button @click="switchTab('customs')" :class="{'tab-active': currentTab === 'customs'}" class="py-3 px-3 shrink-0 text-slate-500 flex items-center gap-1 transition">
+                    Таможня КР
+                    <span x-show="data?.customs?.found" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                </button>
+                <button @click="switchTab('auction')" :class="{'tab-active': currentTab === 'auction'}" class="py-3 px-3 shrink-0 text-slate-500 flex items-center gap-1 transition">
+                    Copart / IAAI
+                    <span x-show="data?.autopartner?.found" class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                </button>
+                <button @click="switchTab('korea')" :class="{'tab-active': currentTab === 'korea'}" class="py-3 px-3 shrink-0 text-slate-500 flex items-center gap-1 transition">
+                    Корея
+                    <span x-show="data?.korea?.found" class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+                </button>
+            </div>
+
+            <!-- TAB 1: СВОДКА И ХАРАКТЕРИСТИКИ -->
+            <div x-show="currentTab === 'overview'" class="bg-white p-4 rounded-b-2xl border border-slate-200 border-t-0 space-y-4">
+                <div>
+                    <h3 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">Характеристики автомобиля</h3>
+                    <div class="divide-y divide-slate-100 text-xs">
+                        <div class="py-2.5 flex justify-between">
+                            <span class="text-slate-500">Марка и Модель:</span>
+                            <span class="font-bold text-slate-900" x-text="data?.summary?.car_name || '—'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between">
+                            <span class="text-slate-500">Год выпуска:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.summary?.year || '—'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between">
+                            <span class="text-slate-500">Цвет кузова:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.summary?.color || '—'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between" x-show="data?.tolom?.car?.type">
+                            <span class="text-slate-500">Тип кузова:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.tolom?.car?.type"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between" x-show="data?.tolom?.car?.engine_volume">
+                            <span class="text-slate-500">Объем двигателя:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.tolom?.car?.engine_volume + ' см³'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between" x-show="data?.tolom?.car?.steering">
+                            <span class="text-slate-500">Расположение руля:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.tolom?.car?.steering"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between" x-show="data?.tolom">
+                            <span class="text-slate-500">Разрешение на тонировку:</span>
+                            <span class="font-bold" :class="data?.tolom?.tinting?.includes('Разрешение отсутствует') ? 'text-slate-500' : 'text-emerald-600'" x-text="data?.tolom?.tinting || 'Нет сведений'"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Registration History Periods -->
+                <div x-show="data?.tolom?.ownership_periods?.length" class="pt-2">
+                    <h3 class="font-bold text-xs uppercase tracking-wider text-slate-400 mb-2">История периодов владения (КР)</h3>
+                    <div class="space-y-1.5">
+                        <template x-for="(period, idx) in data?.tolom?.ownership_periods" :key="idx">
+                            <div class="flex items-center justify-between bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-xl text-xs">
+                                <span class="font-medium text-slate-600" x-text="'Период №' + (idx + 1)"></span>
+                                <span class="font-mono text-slate-900 font-semibold" x-text="period"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: TOLOM.KG (ШТРАФЫ И ПРОТОКОЛЫ) -->
+            <div x-show="currentTab === 'tolom'" class="bg-white p-4 rounded-b-2xl border border-slate-200 border-t-0 space-y-4">
+                <div x-show="!data?.tolom" class="text-xs p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1.5">
+                    <div class="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Требуется госномер Кыргызстана
+                    </div>
+                    <p class="text-[11px] text-amber-800">
+                        Штрафы ГУОБДД, задолженности и история регистрации проверяются по госномеру.
+                    </p>
+                </div>
+
+                <div x-show="data?.tolom?.success">
+                    <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-900">Штрафы ГУОБДД («Безопасный город»)</h3>
+                            <p class="text-[11px] text-slate-500">Зафиксированные нарушения ПДД в КР</p>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs font-black text-rose-600" x-text="data?.tolom?.fines?.total_sum + ' сом'"></div>
+                            <div class="text-[10px] text-slate-400" x-text="data?.tolom?.fines?.count + ' наруш.'"></div>
+                        </div>
+                    </div>
+
+                    <!-- List of Protocols -->
+                    <div x-show="data?.tolom?.fines?.count > 0" class="space-y-3 pt-1">
+                        <template x-for="(fine, idx) in data?.tolom?.fines?.protocols" :key="idx">
+                            <div class="border border-slate-200 rounded-2xl p-3.5 bg-slate-50/70 space-y-2 text-xs">
+                                <div class="flex items-start justify-between gap-2">
+                                    <span class="font-bold text-slate-900 leading-snug" x-text="fine.title"></span>
+                                    <div class="text-right shrink-0">
+                                        <div class="font-bold text-rose-600" x-text="fine.amount_to_pay + ' сом'"></div>
+                                        <div class="text-[10px] line-through text-slate-400" x-show="fine.amount > fine.amount_to_pay" x-text="fine.amount + ' сом'"></div>
+                                    </div>
+                                </div>
+
+                                <div class="text-slate-600 flex items-center gap-1.5 text-[11px]">
+                                    <i class="fa-solid fa-location-dot text-rose-500 shrink-0"></i>
+                                    <span x-text="fine.place"></span>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 text-[11px]">
+                                    <div>
+                                        <span class="text-slate-400">Дата фиксации:</span>
+                                        <div class="font-semibold text-slate-800" x-text="fine.date ? fine.date.replace('T', ' ') : '—'"></div>
+                                    </div>
+                                    <div>
+                                        <span class="text-slate-400">Статья КоП КР:</span>
+                                        <div class="font-semibold text-slate-800" x-text="fine.article"></div>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-between pt-1.5 border-t border-slate-200/60 text-[11px]">
+                                    <span class="font-mono text-slate-500" x-text="'Протокол: ' + fine.protocol_number"></span>
+                                    <template x-if="fine.payment_code">
+                                        <button @click="copyText(fine.payment_code, 'Код оплаты скопирован')" class="text-sky-700 hover:text-sky-900 font-mono font-bold flex items-center gap-1">
+                                            Код: <span x-text="fine.payment_code"></span> <i class="fa-regular fa-copy text-[10px]"></i>
+                                        </button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div x-show="data?.tolom?.fines?.count === 0" class="text-center py-6 bg-emerald-50/50 border border-emerald-200/60 rounded-2xl">
+                        <i class="fa-solid fa-circle-check text-emerald-600 text-2xl mb-1.5"></i>
+                        <h4 class="font-bold text-emerald-950 text-xs">Неоплаченных штрафов нет</h4>
+                        <p class="text-[11px] text-emerald-700 mt-0.5">В базе ГУОБДД КР задолженности отсутствуют</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: CUSTOMS.GOV.KG (ТАМОЖНЯ КР) -->
+            <div x-show="currentTab === 'customs'" class="bg-white p-4 rounded-b-2xl border border-slate-200 border-t-0 space-y-4">
+                <div x-show="!data?.customs" class="text-xs p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1.5">
+                    <div class="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Требуется VIN номер
+                    </div>
+                    <p class="text-[11px] text-amber-800">
+                        Таможенная служба КР проверяет декларации и выпуск по 17-значному VIN коду.
+                    </p>
+                </div>
+
+                <div x-show="data?.customs">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-900">Государственная таможенная служба КР</h3>
+                            <p class="text-[11px] text-slate-500">Статус таможенного оформления и выпуск</p>
+                        </div>
+                        <span class="badge-pill"
+                              :class="data?.customs?.found ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'"
+                              x-text="data?.customs?.found ? 'ВЫПУСК РАЗРЕШЕН' : 'Не найдено'"></span>
+                    </div>
+
+                    <div x-show="data?.customs?.found" class="divide-y divide-slate-100 text-xs">
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Решение таможенного органа:</span>
+                            <span class="font-bold text-emerald-600" x-text="data?.customs?.solution"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Статус оформления:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.customs?.status"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-start">
+                            <span class="text-slate-500 shrink-0">Таможенная процедура:</span>
+                            <span class="font-semibold text-slate-800 text-right max-w-[240px]" x-text="data?.customs?.procedure"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Дата и время выпуска:</span>
+                            <span class="font-mono font-bold text-slate-900" x-text="data?.customs?.issue_date ? data?.customs?.issue_date.replace('T', ' ') : '—'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Тип документа:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.customs?.document_type"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Автомобиль в ДТ:</span>
+                            <span class="font-bold text-slate-900" x-text="data?.customs?.brand + ' ' + data?.customs?.model + ' (' + data?.customs?.year + ')'"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center" x-show="data?.customs?.body_num">
+                            <span class="text-slate-500">Номер кузова:</span>
+                            <span class="font-mono text-slate-800" x-text="data?.customs?.body_num"></span>
+                        </div>
+                    </div>
+
+                    <div x-show="!data?.customs?.found" class="text-center py-6 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                        <i class="fa-regular fa-folder-open text-slate-400 text-2xl mb-1.5"></i>
+                        <h4 class="font-bold text-slate-700 text-xs">В базе таможни КР сведений не найдено</h4>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Возможно, оформление производилось в странах ЕАЭС</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: AUTOPARTNER (COPART / IAAI АУКЦИОНЫ) -->
+            <div x-show="currentTab === 'auction'" class="bg-white p-4 rounded-b-2xl border border-slate-200 border-t-0 space-y-4">
+                <div x-show="!data?.autopartner" class="text-xs p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1.5">
+                    <div class="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Требуется VIN номер
+                    </div>
+                    <p class="text-[11px] text-amber-800">Поиск лотов Copart / IAAI осуществляется по VIN номеру.</p>
+                </div>
+
+                <div x-show="data?.autopartner">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-900">Аукционы Copart / IAAI</h3>
+                            <p class="text-[11px] text-slate-500">История торгов в США и снимки повреждений</p>
+                        </div>
+                        <span class="badge-pill"
+                              :class="data?.autopartner?.found ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-600'"
+                              x-text="data?.autopartner?.found ? 'ЛОТ НАЙДЕН' : 'Не найден'"></span>
+                    </div>
+
+                    <div x-show="data?.autopartner?.found" class="space-y-4">
+                        <div class="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl">
+                            <h4 class="font-bold text-slate-900 text-xs mb-2" x-text="data?.autopartner?.title"></h4>
+                            <div class="grid grid-cols-2 gap-2 text-xs divide-y divide-slate-100">
+                                <div class="py-1" x-show="data?.autopartner?.lot_number">
+                                    <span class="text-slate-400 text-[11px]">Номер лота:</span>
+                                    <div class="font-mono font-bold text-slate-800" x-text="data?.autopartner?.lot_number"></div>
+                                </div>
+                                <div class="py-1" x-show="data?.autopartner?.odometer">
+                                    <span class="text-slate-400 text-[11px]">Пробег (одометр):</span>
+                                    <div class="font-bold text-sky-700" x-text="data?.autopartner?.odometer"></div>
+                                </div>
+                                <div class="py-1" x-show="data?.autopartner?.damage_primary">
+                                    <span class="text-slate-400 text-[11px]">Основное повреждение:</span>
+                                    <div class="font-bold text-rose-600" x-text="data?.autopartner?.damage_primary"></div>
+                                </div>
+                                <div class="py-1" x-show="data?.autopartner?.damage_secondary">
+                                    <span class="text-slate-400 text-[11px]">Вторичное повреждение:</span>
+                                    <div class="font-semibold text-amber-700" x-text="data?.autopartner?.damage_secondary"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Gallery Grid -->
+                        <div x-show="data?.autopartner?.images?.length">
+                            <h4 class="font-bold text-xs text-slate-700 mb-2">Снимки лота с аукциона (нажмите для просмотра):</h4>
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                <template x-for="(img, idx) in data?.autopartner?.images" :key="idx">
+                                    <div class="relative group cursor-pointer overflow-hidden rounded-xl border border-slate-200 aspect-[4/3] bg-slate-100" @click="selectedImage = img">
+                                        <img :src="img" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" alt="Auction image" loading="lazy" />
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+
+                        <a :href="data?.autopartner?.url" target="_blank" class="block w-full text-center bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 rounded-xl text-xs transition shadow-sm">
+                            Перейти к оригинальной странице лота →
+                        </a>
+                    </div>
+
+                    <div x-show="!data?.autopartner?.found" class="text-center py-6 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                        <i class="fa-solid fa-car-burst text-slate-400 text-2xl mb-1.5"></i>
+                        <h4 class="font-bold text-slate-700 text-xs">В аукционной базе лот не найден</h4>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Автомобиль не проходил страховые аукционы Copart / IAAI</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: KOREA-CARS.COM -->
+            <div x-show="currentTab === 'korea'" class="bg-white p-4 rounded-b-2xl border border-slate-200 border-t-0 space-y-4">
+                <div x-show="!data?.korea" class="text-xs p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1.5">
+                    <div class="font-bold text-xs text-amber-900 flex items-center gap-1.5">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-600"></i> Требуется VIN номер
+                    </div>
+                    <p class="text-[11px] text-amber-800">Экспортный реестр Южной Кореи проверяется по VIN коду.</p>
+                </div>
+
+                <div x-show="data?.korea">
+                    <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                        <div>
+                            <h3 class="font-bold text-sm text-slate-900">Экспортный реестр Южной Кореи</h3>
+                            <p class="text-[11px] text-slate-500">Снятие с учета и экспортный пробег</p>
+                        </div>
+                        <span class="badge-pill"
+                              :class="data?.korea?.found ? 'bg-sky-100 text-sky-800' : 'bg-slate-100 text-slate-600'"
+                              x-text="data?.korea?.found ? 'НАЙДЕН В РЕЕСТРЕ' : 'Нет данных'"></span>
+                    </div>
+
+                    <div x-show="data?.korea?.found" class="divide-y divide-slate-100 text-xs">
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Модель в реестре:</span>
+                            <span class="font-bold text-slate-900" x-text="data?.korea?.model"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Цвет кузова:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.korea?.color"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Дата разрешения на вывоз:</span>
+                            <span class="font-mono font-bold text-slate-900" x-text="data?.korea?.export_date"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center">
+                            <span class="text-slate-500">Зафиксированный пробег при вывозе:</span>
+                            <span class="font-bold text-sky-700" x-text="data?.korea?.export_mileage"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center" x-show="data?.korea?.first_registration_date">
+                            <span class="text-slate-500">Первая регистрация в Корее:</span>
+                            <span class="font-semibold text-slate-800" x-text="data?.korea?.first_registration_date"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center" x-show="data?.korea?.damaged">
+                            <span class="text-slate-500">Серьезные повреждения (Total loss):</span>
+                            <span class="font-bold" :class="data?.korea?.damaged === 'Да' ? 'text-rose-600' : 'text-slate-700'" x-text="data?.korea?.damaged"></span>
+                        </div>
+                        <div class="py-2.5 flex justify-between items-center" x-show="data?.korea?.dimensions && data?.korea?.dimensions !== '—'">
+                            <span class="text-slate-500">Габариты кузова:</span>
+                            <span class="font-mono text-slate-800" x-text="data?.korea?.dimensions"></span>
+                        </div>
+
+                        <div class="pt-4" x-show="data?.korea?.report_url">
+                            <a :href="data?.korea?.report_url" target="_blank" class="block w-full text-center bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold py-2.5 rounded-xl text-xs transition border border-slate-200">
+                                Открыть отчет CarHistory Korea →
+                            </a>
+                        </div>
+                    </div>
+
+                    <div x-show="!data?.korea?.found" class="text-center py-6 bg-slate-50 border border-slate-200/80 rounded-2xl">
+                        <i class="fa-regular fa-circle-question text-slate-400 text-2xl mb-1.5"></i>
+                        <h4 class="font-bold text-slate-700 text-xs">В экспортном реестре сведений нет</h4>
+                        <p class="text-[11px] text-slate-500 mt-0.5">Транспортное средство не экспортировалось из Кореи</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Fullscreen Photo Modal -->
+    <div x-show="selectedImage" @click="selectedImage = null" class="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 backdrop-blur-md" x-cloak>
+        <div class="relative max-w-4xl w-full flex items-center justify-center">
+            <img :src="selectedImage" class="max-w-full max-h-[88vh] object-contain rounded-xl shadow-2xl" alt="Full photo" />
+            <button @click="selectedImage = null" class="absolute top-2 right-2 bg-white/20 hover:bg-white/30 text-white rounded-full w-9 h-9 flex items-center justify-center text-sm transition">✕</button>
+        </div>
+    </div>
+
+    <!-- Alpine.js Application Logic -->
+    <script>
+        function carApp() {
+            return {
+                plateInput: '',
+                vinInput: '',
+                currentTab: 'overview',
+                loading: false,
+                errorMessage: '',
+                data: null,
+                selectedImage: null,
+                toastMessage: '',
+
+                initApp() {
+                    if (window.Telegram && window.Telegram.WebApp) {
+                        window.Telegram.WebApp.ready();
+                        window.Telegram.WebApp.expand();
+                    }
+
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const q = urlParams.get('q');
+                    const pathParts = window.location.pathname.split('/');
+                    const reportQuery = pathParts.length > 2 && pathParts[1] === 'report' ? pathParts[2] : null;
+
+                    const initialQuery = q || reportQuery;
+                    if (initialQuery) {
+                        const decoded = decodeURIComponent(initialQuery);
+                        const parts = decoded.split(/[\s,]+/);
+                        parts.forEach(part => {
+                            const clean = part.trim().toUpperCase();
+                            if (clean.length === 17) {
+                                this.vinInput = clean;
+                            } else if (clean.length >= 3) {
+                                this.plateInput = clean;
+                            }
+                        });
+                        this.performSearch();
+                    }
+                },
+
+                switchTab(tabName) {
+                    this.currentTab = tabName;
+                    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+                        window.Telegram.WebApp.HapticFeedback.selectionChanged();
+                    }
+                },
+
+                fillExample(plate, vin) {
+                    this.plateInput = plate;
+                    this.vinInput = vin;
+                    this.performSearch();
+                },
+
+                showToast(msg) {
+                    this.toastMessage = msg;
+                    setTimeout(() => { this.toastMessage = ''; }, 2200);
+                },
+
+                copyText(text, successMsg = 'Скопировано!') {
+                    if (navigator.clipboard) {
+                        navigator.clipboard.writeText(text);
+                        this.showToast(successMsg);
+                        if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+                            window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+                        }
+                    }
+                },
+
+                copyFullReport() {
+                    if (!this.data) return;
+                    const d = this.data;
+                    let text = `🚘 ${d.summary?.car_name || 'Автомобиль'} (${d.summary?.year || '—'} г.)\n`;
+                    if (d.plate) text += `🇰🇬 Госномер: ${d.plate}\n`;
+                    if (d.vin) text += `🔑 VIN: ${d.vin}\n\n`;
+                    text += `• Штрафы КР: ${d.summary?.has_fines ? d.summary?.fines_count + ' шт. на ' + d.summary?.fines_sum + ' сом' : 'Чисто (0 сом)'}\n`;
+                    text += `• Таможня КР: ${d.customs?.found ? d.customs?.solution : 'Не числится'}\n`;
+                    text += `• Корея: ${d.korea?.found ? 'Экспорт ' + d.korea?.export_date : 'Нет данных'}\n`;
+                    text += `• Аукционы: ${d.autopartner?.found ? d.autopartner?.title : 'Не числится'}\n`;
+                    this.copyText(text, 'Сводка скопирована в буфер обмена!');
+                },
+
+                async performSearch() {
+                    const p = this.plateInput.trim();
+                    const v = this.vinInput.trim();
+
+                    if (!p && !v) {
+                        this.errorMessage = 'Введите Госномер или VIN номер для проверки';
+                        return;
+                    }
+
+                    this.loading = true;
+                    this.errorMessage = '';
+                    this.data = null;
+
+                    if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.HapticFeedback) {
+                        window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+                    }
+
+                    try {
+                        const params = new URLSearchParams();
+                        if (p) params.append('plate', p);
+                        if (v) params.append('vin', v);
+
+                        const resp = await fetch(`/api/check?${params.toString()}`);
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            throw new Error(err.detail || 'Ошибка при запросе данных');
+                        }
+
+                        this.data = await resp.json();
+                    } catch (err) {
+                        this.errorMessage = err.message || 'Не удалось получить данные по автомобилю';
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
